@@ -2,6 +2,8 @@ from flask import Flask ,jsonify ,request
 from flask_cors import CORS      
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
+from flask_login import LoginManager, login_required, current_user
+from bcrypt import bcrypt
 
 app = Flask(__name__)
 CORS(app, origins='http://127.0.0.1:5500')
@@ -10,6 +12,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root@localhost/Crudpyth
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS']=False
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
 
 class Producto(db.Model):
 	id = db.Column(db.Integer, primary_key=True)
@@ -24,6 +28,27 @@ class Producto(db.Model):
 		self.precio = precio
 		self.stock = stock
 		self.imagen = imagen
+
+
+class Admin(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100), unique=True)
+    password_hash = db.Column(db.String(255))
+
+    def set_password(self, password):
+        password_bytes = password.encode('utf-8')
+        salt = bcrypt.gensalt()
+        hashed_password = bcrypt.hashpw(password_bytes, salt)
+        self.password_hash = hashed_password.decode('utf-8')
+
+    def check_password(self, password):
+        password_bytes = password.encode('utf-8')
+        hashed_password_bytes = self.password_hash.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_password_bytes)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return Admin.query.get(int(user_id))
 
 
 
@@ -51,6 +76,7 @@ def get_producto(id):
 	return producto_schema.jsonify(producto)   # retorna el JSON de un producto recibido como parametro
 
 @app.route('/productos/<id>',methods=['DELETE'])
+@login_required
 def delete_producto(id):
 	producto=Producto.query.get(id)
 	db.session.delete(producto)
@@ -58,6 +84,7 @@ def delete_producto(id):
 	return producto_schema.jsonify(producto)
 
 @app.route('/productos',methods=['POST'])
+@login_required
 def create_producto():
 	nombre = request.json['nombre']
 	precio = request.json['precio']
@@ -85,6 +112,20 @@ def update_producto(id):
 	return producto_schema.jsonify(producto)
 
 
+@app.route('/login', methods=['POST'])
+def login():
+    username = request.json['username']
+    password = request.json['password']
+
+    admin = Admin.query.filter_by(username=username).first()
+
+    if admin and admin.check_password(password):
+        # Generar y devolver el token de autenticación
+        # Manejar la lógica de inicio de sesión exitoso
+        return jsonify(message='Inicio de sesión exitoso')
+
+    # Manejar la lógica de inicio de sesión fallido
+    return jsonify(message='Credenciales inválidas')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
